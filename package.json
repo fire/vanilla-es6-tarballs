@@ -1,0 +1,15 @@
+{
+  "name": "vanilla-es6-tarballs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dependency-free tar+gzip (dynamic-Huffman DEFLATE) in a single ES6 file, proof-first in Lean 4",
+  "scripts": {
+    "test": "node --test test/",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@playwright/test": "^1.54.0"
+  }
+}

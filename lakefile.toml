@@ -1,0 +1,13 @@
+name = "TarGz"
+version = "0.1.0"
+defaultTargets = ["TarGz", "Tests", "targz"]
+
+[[lean_lib]]
+name = "TarGz"
+
+[[lean_lib]]
+name = "Tests"
+
+[[lean_exe]]
+name = "targz"
+root = "Main"
