@@ -203,10 +203,10 @@ theorem lzCopy_take (data : Array UInt8) :
     congr 1
     omega
 
-private theorem resolve_lit (b : UInt8) (ts : List Tok) (out : List UInt8) :
+theorem resolve_lit (b : UInt8) (ts : List Tok) (out : List UInt8) :
     resolve (Tok.lit b :: ts) out = resolve ts (out ++ [b]) := rfl
 
-private theorem resolve_ref (len dist : Nat) (ts : List Tok) (out : List UInt8) :
+theorem resolve_ref (len dist : Nat) (ts : List Tok) (out : List UInt8) :
     resolve (Tok.ref len dist :: ts) out =
       if 1 ≤ dist ∧ dist ≤ out.length ∧ dist ≤ 32768 ∧ 3 ≤ len ∧ len ≤ 258 then
         resolve ts (lzCopy out dist len)
