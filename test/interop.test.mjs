@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+// SPDX-License-Identifier: MIT
+
 // Interop with the system tar (Windows ships bsdtar as tar.exe).
 import { test } from "node:test";
 import assert from "node:assert/strict";

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+// SPDX-License-Identifier: MIT
+
 // Minimal dependency-free static file server for the Playwright suite.
 import http from "node:http";
 import fs from "node:fs";

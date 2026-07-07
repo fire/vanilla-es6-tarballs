@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+# SPDX-License-Identifier: MIT
+
 # Fails if any Lean source contains sorry/admit, or native_decide inside TarGz/.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot

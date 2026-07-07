@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+// SPDX-License-Identifier: MIT
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { create, extract, deflate, inflate, gzip, gunzip, crc32 } from "../targz.mjs";

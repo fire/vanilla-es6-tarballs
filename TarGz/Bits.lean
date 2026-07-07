@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+-- SPDX-License-Identifier: MIT
+
 /-!
 # LSB-first bit layer for DEFLATE
 

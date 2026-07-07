@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+# SPDX-License-Identifier: MIT
+
 name = "TarGz"
 version = "0.1.0"
 defaultTargets = ["TarGz", "Tests", "targz"]

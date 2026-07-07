@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+// SPDX-License-Identifier: MIT
+
 /*
  * targz.mjs — dependency-free tar + gzip (dynamic-Huffman DEFLATE) in one ES6 file.
  *

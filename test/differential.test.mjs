@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+// SPDX-License-Identifier: MIT
+
 // Byte-identical differential test: the Lean CLI (verified model) and the
 // ES6 program must produce EXACTLY the same archives, and each must extract
 // the other's output.

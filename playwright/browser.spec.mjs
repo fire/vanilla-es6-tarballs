@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+// SPDX-License-Identifier: MIT
+
 // The vanilla ES6 core must run unchanged in a real browser: this suite
 // imports /targz.mjs as an ES module in Chromium and runs the round trips
 // in-page (pure Uint8Array code, zero imports — the Node CLI block is inert).

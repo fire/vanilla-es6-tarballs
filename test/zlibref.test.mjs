@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+// SPDX-License-Identifier: MIT
+
 // node:zlib as an independent reference implementation (dev-only — never
 // imported by targz.mjs itself).
 import { test } from "node:test";

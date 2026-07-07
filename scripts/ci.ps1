@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+# SPDX-License-Identifier: MIT
+
 # Full verification pipeline: proofs -> hygiene -> Node tests -> browser tests.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
