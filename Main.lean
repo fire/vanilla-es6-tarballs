@@ -54,7 +54,8 @@ def cmdExtract (archive : String) (dir : String) : IO UInt32 := do
         if unsafeName name then
           IO.eprintln s!"targz: refusing to extract unsafe entry name: {name}"
           return 1
-        let path := (name.splitOn "/").foldl (fun (p : System.FilePath) c => p / c)
+        let path := (name.splitOn "/").foldl
+          (fun (p : System.FilePath) c => p / System.FilePath.mk c)
           (System.FilePath.mk dir)
         if let some parent := path.parent then
           IO.FS.createDirAll parent

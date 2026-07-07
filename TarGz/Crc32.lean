@@ -6,8 +6,8 @@ import TarGz.Bits
 `crcByte`/`crc32Spec` is the bit-serial specification. `crc32` is the
 table-driven implementation that the ES6 program transcribes. The headline
 result `crc32_eq_spec` proves the classic table identity
-`crcStep8 x = (x >>> 8) ^^^ crcStep8 (x &&& 0xFF)` and lifts it to the fold —
-no `bv_decide`/`native_decide`, so the axiom audit stays clean.
+`crcStep8 x = (x >>> 8) ^^^ crcStep8 (x &&& 0xFF)` and lifts it to the fold,
+using only kernel-checked `decide` so the axiom audit stays clean.
 -/
 
 namespace TarGz

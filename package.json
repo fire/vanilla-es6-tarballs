@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Dependency-free tar+gzip (dynamic-Huffman DEFLATE) in a single ES6 file, proof-first in Lean 4",
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test \"test/*.test.mjs\"",
     "test:browser": "playwright test"
   },
   "dependencies": {},
