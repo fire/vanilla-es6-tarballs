@@ -17,7 +17,7 @@ test("module imports cleanly in the browser", async ({ page }) => {
     return Object.keys(m).sort();
   });
   expect(keys).toEqual(
-    ["VERSION", "crc32", "create", "deflate", "extract", "gunzip", "gzip", "inflate", "tar", "untar"].sort()
+    ["crc32", "create", "deflate", "extract", "gunzip", "gzip", "inflate", "tar", "untar"].sort()
   );
 });
 

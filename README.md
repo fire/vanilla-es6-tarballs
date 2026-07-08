@@ -10,10 +10,9 @@ per-block Huffman tables), and the decoder handles all three block types
 `tar`/bsdtar.
 
 ```
-node targz.mjs c out.tar.gz file1.txt some/dir        # create (dirs recurse, mtimes preserved)
-node targz.mjs x out.tar.gz -C dest                   # extract (restores dirs + mtimes)
+node targz.mjs c out.tar.gz file1.txt dir/file2.bin   # create
+node targz.mjs x out.tar.gz -C dest                   # extract
 node targz.mjs t out.tar.gz                           # list
-node targz.mjs x untrusted.tgz --max-size 100000000   # decompression-bomb cap
 ```
 
 Or as a library (browser or Node — the core is pure `Uint8Array` code with
@@ -21,12 +20,8 @@ zero imports):
 
 ```js
 import { create, extract, gzip, gunzip, deflate, inflate, crc32 } from "./targz.mjs";
-const archive = create([
-  { name: "docs/", dir: true, mtime: 1700000000 },
-  { name: "docs/hello.txt", data: new TextEncoder().encode("hi\n"), mode: 0o644 },
-]);
-const entries = extract(archive, { maxBytes: 1 << 30 });
-// [{ name, nameBytes, data, mode, mtime, dir }] or null
+const archive = create([{ name: "hello.txt", data: new TextEncoder().encode("hi\n") }]);
+const entries = extract(archive); // [{ name, nameBytes, data }] or null
 ```
 
 ## The proofs
@@ -85,28 +80,16 @@ and the fallback it guards is dead code (kept as belt and suspenders).
 
 ## Scope and format notes
 
-- Creation: USTAR files **and directories** with **mode and mtime**
-  (defaults `0644`/`0755`, mtime 0 — identical input entries always produce
-  identical archive bytes), names ≤ 100 bytes (UTF-8), one gzip member. The
-  DEFLATE encoder emits a single final dynamic-Huffman block, or stored
-  blocks when those are strictly smaller (tiny/incompressible inputs), which
-  bounds worst-case expansion to 5 bytes + 0.008%.
+- Creation: USTAR, regular files only, names ≤ 100 bytes (UTF-8), one gzip
+  member, a single final dynamic-Huffman DEFLATE block (stored blocks as the
+  verified fallback), all-19 CL lengths with literal-only code-length symbols
+  (legal DEFLATE; the *decoder* handles the full 16/17/18 RLE).
 - Extraction: stored + fixed + dynamic blocks; gzip optional header fields
-  (FEXTRA/FNAME/FCOMMENT/FHCRC) skipped; CRC-32 + ISIZE verified per member;
-  **multi-member gzip concatenated** (pigz-style); tar header checksums
-  verified; file/directory entries returned with mode + mtime; long names
-  via ustar `prefix`, **pax `path`**, and **GNU `L`** entries; **GNU
-  base-256 (binary) size fields** read. pax `g`, GNU `K`, links, devices,
-  sparse files, and xattrs are skipped.
-- Untrusted input: `extract`/`gunzip`/`inflate` accept `{ maxBytes }` as a
-  decompression-bomb cap (`--max-size` on the CLI).
-- The CLI refuses unsafe extraction paths (absolute, drive-letter, `..`) and
-  canonicalizes modes to `0644`/`0755` on create for cross-platform
-  byte-determinism (the library preserves whatever mode you pass).
-- Reader-side tolerances beyond the verified model (pax/GNU long names,
-  base-256 sizes, multi-member gzip) are deliberate supersets: the Lean
-  theorems cover everything this implementation can *produce* plus the
-  standard ustar/octal/single-member subset it reads back.
+  (FEXTRA/FNAME/FCOMMENT/FHCRC) skipped; CRC-32 + ISIZE verified; ustar
+  `prefix` field joined; header checksums verified; pax `x`/`g`, GNU `L`/`K`,
+  directories and other typeflags are skipped (long-name entries are not
+  reconstructed).
+- The CLI refuses unsafe extraction paths (absolute, drive-letter, `..`).
 
 ## Testing
 

@@ -1,37 +1,10 @@
 {
   "name": "vanilla-es6-tarballs",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "description": "Dependency-free tar+gzip (dynamic-Huffman DEFLATE) in a single ES6 file, proof-first in Lean 4",
-  "author": "K. S. Ernest (iFire) Lee",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/fire/vanilla-es6-tarballs.git"
-  },
-  "main": "./targz.mjs",
-  "exports": "./targz.mjs",
-  "files": [
-    "targz.mjs",
-    "README.md",
-    "LICENSE"
-  ],
-  "bin": {
-    "targz": "./targz.mjs"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "keywords": [
-    "tar",
-    "gzip",
-    "deflate",
-    "ustar",
-    "dependency-free",
-    "formally-verified",
-    "lean4"
-  ],
   "scripts": {
     "test": "node --test \"test/*.test.mjs\"",
     "test:coverage": "node --test --experimental-test-coverage \"test/*.test.mjs\"",
