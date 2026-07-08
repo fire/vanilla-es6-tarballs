@@ -27,7 +27,7 @@ const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
     let c = i;
-    for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1;
+    for (let k = 0; k < 8; k++) {c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1;}
     t[i] = c >>> 0;
   }
   return t;
@@ -91,7 +91,7 @@ function bitReader(bytes) {
 
 // Lean: readBitsLE — null when the stream is exhausted
 function readBits(r, n) {
-  if (r.pos + n > r.len) return null;
+  if (r.pos + n > r.len) {return null;}
   let v = 0;
   for (let i = 0; i < n; i++) {
     v += ((r.bytes[r.pos >>> 3] >>> (r.pos & 7)) & 1) * 2 ** i;
@@ -108,7 +108,7 @@ function readBits(r, n) {
 // Lean: TarGz.canonicalCodes — positional [len, code] per symbol
 function canonicalCodes(maxLen, lens) {
   const used = [];
-  for (let i = 0; i < lens.length; i++) if (lens[i] !== 0) used.push([lens[i], i]);
+  for (let i = 0; i < lens.length; i++) {if (lens[i] !== 0) {used.push([lens[i], i]);}}
   used.sort((a, b) => a[0] - b[0]); // stable sort by length (ES2019)
   const codes = lens.map(() => [0, 0]);
   let start = 0;
@@ -121,7 +121,7 @@ function canonicalCodes(maxLen, lens) {
 
 // Lean: TarGz.encodeSym (unknown/unused symbols emit nothing)
 function encodeSym(w, codes, s) {
-  if (s < codes.length && codes[s][0] !== 0) writeBitsMSB(w, codes[s][1], codes[s][0]);
+  if (s < codes.length && codes[s][0] !== 0) {writeBitsMSB(w, codes[s][1], codes[s][0]);}
 }
 
 // Lean: TarGz.findSym as a (len<<16|code) → first-symbol table
@@ -131,7 +131,7 @@ function decodeTable(codes) {
     const [l, c] = codes[s];
     if (l !== 0) {
       const key = l * 65536 + c;
-      if (!m.has(key)) m.set(key, s);
+      if (!m.has(key)) {m.set(key, s);}
     }
   }
   return m;
@@ -142,10 +142,10 @@ function decodeSym(r, table, maxLen) {
   let acc = 0;
   for (let k = 1; k <= maxLen; k++) {
     const b = readBits(r, 1);
-    if (b === null) return null;
+    if (b === null) {return null;}
     acc = 2 * acc + b;
     const hit = table.get(k * 65536 + acc);
-    if (hit !== undefined) return hit;
+    if (hit !== undefined) {return hit;}
   }
   return null;
 }
@@ -159,13 +159,13 @@ function prefixFree(maxLen, codes) {
   const used = [];
   for (const p of codes) {
     if (p[0] !== 0) {
-      if (!(p[0] <= maxLen && p[1] < 2 ** p[0])) return false;
+      if (!(p[0] <= maxLen && p[1] < 2 ** p[0])) {return false;}
       used.push(p);
     }
   }
   for (let i = 0; i < used.length; i++) {
     for (let j = 0; j < used.length; j++) {
-      if (i !== j && numPrefix(used[i], used[j])) return false;
+      if (i !== j && numPrefix(used[i], used[j])) {return false;}
     }
   }
   return true;
@@ -185,14 +185,14 @@ function symUsable(codes, s) {
 // Lean: TarGz.wqInsert — stable insert before the first strictly greater weight
 function wqInsert(q, w, t) {
   let i = 0;
-  while (i < q.length && !(w < q[i][0])) i++;
+  while (i < q.length && !(w < q[i][0])) {i++;}
   q.splice(i, 0, [w, t]);
   return q;
 }
 
 // Lean: TarGz.buildTree — pair the two lightest until one remains
 function buildTree(q) {
-  if (q.length === 0) return null;
+  if (q.length === 0) {return null;}
   while (q.length >= 2) {
     const [w1, t1] = q[0];
     const [w2, t2] = q[1];
@@ -203,7 +203,7 @@ function buildTree(q) {
 
 // Lean: TarGz.treeDepths / maxDepth
 function treeDepths(depths, t, d) {
-  if (t.l === undefined) depths.push([t.s, d]);
+  if (t.l === undefined) {depths.push([t.s, d]);}
   else {
     treeDepths(depths, t.l, d + 1);
     treeDepths(depths, t.r, d + 1);
@@ -215,20 +215,24 @@ function tryLengths(maxLen, n, freqs) {
   let q = [];
   const usedCount = freqs.reduce((a, f) => a + (f !== 0 ? 1 : 0), 0);
   for (let i = 0; i < freqs.length; i++) {
-    if (freqs[i] !== 0) q = wqInsert(q, freqs[i], { s: i });
+    if (freqs[i] !== 0) {q = wqInsert(q, freqs[i], { s: i });}
   }
   const tree = buildTree(q);
-  if (tree === null) return null;
+  if (tree === null) {return null;}
+  // Lean-fidelity branch; unreachable through the
+// public API because mkLengths applies ensureTwoUsed first.
+/* node:coverage disable */
   if (usedCount === 1) {
     return Array.from({ length: n }, (_, s) => (freqs[s] !== 0 ? 1 : 0));
   }
+  /* node:coverage enable */
   const depths = [];
   treeDepths(depths, tree, 0);
   let md = 0;
-  for (const [, d] of depths) md = Math.max(md, d);
-  if (md > maxLen) return null;
+  for (const [, d] of depths) {md = Math.max(md, d);}
+  if (md > maxLen) {return null;}
   const lens = new Array(n).fill(0);
-  for (const [s, d] of depths) lens[s] = d;
+  for (const [s, d] of depths) {lens[s] = d;}
   return lens;
 }
 
@@ -240,8 +244,8 @@ function ensureTwoUsed(freqs) {
     f[0] += 1;
     f[1] += 1;
   } else if (used === 1) {
-    if (f[0] === 0) f[0] += 1;
-    else f[1] += 1;
+    if (f[0] === 0) {f[0] += 1;}
+    else {f[1] += 1;}
   }
   return f;
 }
@@ -251,7 +255,7 @@ function mkLengths(maxLen, n, freqs0) {
   let fs = ensureTwoUsed(freqs0);
   for (let retries = 5; retries > 0; retries--) {
     const lens = tryLengths(maxLen, n, fs);
-    if (lens !== null) return lens;
+    if (lens !== null) {return lens;}
     fs = fs.map((f) => (f === 0 ? 0 : Math.floor(f / 2) + 1));
   }
   return new Array(n).fill(0);
@@ -271,7 +275,7 @@ function hash3(a, b, c) {
 // Lean: TarGz.matchLen
 function matchLen(data, src, pos, fuel) {
   let n = 0;
-  while (n < fuel && data[src + n] === data[pos + n]) n++;
+  while (n < fuel && data[src + n] === data[pos + n]) {n++;}
   return n;
 }
 
@@ -279,7 +283,7 @@ function matchLen(data, src, pos, fuel) {
 function chainWalk(data, pos, prev, cand, tries, bestLen, bestDist) {
   const fuel = Math.min(258, data.length - pos);
   for (let t = tries; t > 0; t--) {
-    if (!(cand < pos && pos - cand <= 32768)) break;
+    if (!(cand < pos && pos - cand <= 32768)) {break;}
     const l = matchLen(data, cand, pos, fuel);
     if (l > bestLen) {
       bestLen = l;
@@ -345,29 +349,35 @@ const DIST_TABLE = [
 
 // Lean: TarGz.encodeLenSym — [sym, extraBits, extraVal]
 function encodeLenSym(len) {
-  if (len === 258) return [285, 0, 0];
+  if (len === 258) {return [285, 0, 0];}
   for (const [s, base, extra] of LEN_TABLE) {
-    if (base <= len && len < base + 2 ** extra) return [s, extra, len - base];
+    if (base <= len && len < base + 2 ** extra) {return [s, extra, len - base];}
   }
+  /* node:coverage disable */
+  // unreachable: tokenize only emits 3 <= len <= 258.
   return [0, 0, 0];
+  /* node:coverage enable */
 }
 
 // Lean: TarGz.encodeDistSym
 function encodeDistSym(d) {
   for (const [s, base, extra] of DIST_TABLE) {
-    if (base <= d && d < base + 2 ** extra) return [s, extra, d - base];
+    if (base <= d && d < base + 2 ** extra) {return [s, extra, d - base];}
   }
+  /* node:coverage disable */
+  // unreachable: tokenize only emits 1 <= d <= 32768.
   return [0, 0, 0];
+  /* node:coverage enable */
 }
 
 // Lean: TarGz.lenSymBase / distSymBase
 function lenSymBase(sym) {
-  for (const [s, base, extra] of LEN_TABLE) if (s === sym) return [base, extra];
+  for (const [s, base, extra] of LEN_TABLE) {if (s === sym) {return [base, extra];}}
   return null;
 }
 
 function distSymBase(sym) {
-  for (const [s, base, extra] of DIST_TABLE) if (s === sym) return [base, extra];
+  for (const [s, base, extra] of DIST_TABLE) {if (s === sym) {return [base, extra];}}
   return null;
 }
 
@@ -386,7 +396,7 @@ function distOk(d) {
 
 // Lean: TarGz.TokUsable
 function tokUsable(litC, distC, t) {
-  if (t.length === 1) return symUsable(litC, t[0]);
+  if (t.length === 1) {return symUsable(litC, t[0]);}
   const [len, d] = t;
   return (
     3 <= len && len <= 258 && 1 <= d && d <= 32768 && lenOk(len) && distOk(d) &&
@@ -399,7 +409,7 @@ function tokenFreqs(toks) {
   const lf = new Array(286).fill(0);
   const df = new Array(30).fill(0);
   for (const t of toks) {
-    if (t.length === 1) lf[t[0]] += 1;
+    if (t.length === 1) {lf[t[0]] += 1;}
     else {
       lf[encodeLenSym(t[0])[0]] += 1;
       df[encodeDistSym(t[1])[0]] += 1;
@@ -411,7 +421,7 @@ function tokenFreqs(toks) {
 // Lean: TarGz.clFreqs
 function clFreqs(vals) {
   const f = new Array(19).fill(0);
-  for (const v of vals) f[v] += 1;
+  for (const v of vals) {f[v] += 1;}
   return f;
 }
 
@@ -420,13 +430,13 @@ const CL_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 
 
 // Lean: TarGz.DynOk — the decidable validity bundle
 function dynOk(toks, litLens, distLens, clLens, litC, distC, clC) {
-  if (litLens.length !== 286 || distLens.length !== 30 || clLens.length !== 19) return false;
-  if (!clLens.every((v) => v <= 7)) return false;
-  if (!prefixFree(15, litC) || !prefixFree(15, distC) || !prefixFree(7, clC)) return false;
-  if (!symUsable(litC, 256)) return false;
-  if (!toks.every((t) => tokUsable(litC, distC, t))) return false;
+  if (litLens.length !== 286 || distLens.length !== 30 || clLens.length !== 19) {return false;}
+  if (!clLens.every((v) => v <= 7)) {return false;}
+  if (!prefixFree(15, litC) || !prefixFree(15, distC) || !prefixFree(7, clC)) {return false;}
+  if (!symUsable(litC, 256)) {return false;}
+  if (!toks.every((t) => tokUsable(litC, distC, t))) {return false;}
   for (const v of litLens.concat(distLens)) {
-    if (!(v <= 15 && symUsable(clC, v))) return false;
+    if (!(v <= 15 && symUsable(clC, v))) {return false;}
   }
   return true;
 }
@@ -436,14 +446,14 @@ function writeDynHeader(w, litLens, distLens, clLens, clC) {
   writeBits(w, litLens.length - 257, 5);
   writeBits(w, distLens.length - 1, 5);
   writeBits(w, 15, 4);
-  for (const i of CL_ORDER) writeBits(w, clLens[i], 3);
-  for (const v of litLens.concat(distLens)) encodeSym(w, clC, v);
+  for (const i of CL_ORDER) {writeBits(w, clLens[i], 3);}
+  for (const v of litLens.concat(distLens)) {encodeSym(w, clC, v);}
 }
 
 // Lean: TarGz.encodeTok / encodeTokens
 function encodeTokens(w, litC, distC, toks) {
   for (const t of toks) {
-    if (t.length === 1) encodeSym(w, litC, t[0]);
+    if (t.length === 1) {encodeSym(w, litC, t[0]);}
     else {
       const [ls, le, lv] = encodeLenSym(t[0]);
       const [ds, de, dv] = encodeDistSym(t[1]);
@@ -457,6 +467,11 @@ function encodeTokens(w, litC, distC, toks) {
 }
 
 // Lean: TarGz.encodeStoredBlock / encodeStored / storedChunks
+// the verified stored fallback: only taken when the
+// DynOk runtime check fails, and TarGz.canonical_prefixFree proves the
+// PrefixFree component of that check can never fail. Kept (like in the Lean
+// model) as belt and suspenders.
+/* node:coverage disable */
 function writeStored(w, data) {
   let off = 0;
   do {
@@ -467,13 +482,11 @@ function writeStored(w, data) {
     writeBits(w, 0, 5); // blocks start byte-aligned; 5 pad bits after the header
     writeBits(w, chunk.length, 16);
     writeBits(w, 65535 - chunk.length, 16);
-    for (const b of chunk) writeBits(w, b, 8);
+    for (const b of chunk) {writeBits(w, b, 8);}
     off += chunk.length;
   } while (off < data.length);
-  if (data.length === 0 && w.bytes.length === 0 && w.cnt === 0) {
-    // handled by the do-while above (empty chunk emitted once)
-  }
 }
+/* node:coverage enable */
 
 // Lean: TarGz.encodeBlockDyn + deflate — dynamic block or stored fallback
 export function deflate(data) {
@@ -493,18 +506,21 @@ export function deflate(data) {
     writeDynHeader(w, litLens, distLens, clLens, clC);
     encodeTokens(w, litC, distC, toks);
   } else {
+    /* node:coverage disable */
+    // see writeStored above.
     writeStored(w, data);
   }
+  /* node:coverage enable */
   return finishBits(w);
 }
 
 // Lean: TarGz.fixedLitLens / fixedDistLens
 const FIXED_LIT_LENS = (() => {
   const l = [];
-  for (let i = 0; i < 144; i++) l.push(8);
-  for (let i = 0; i < 112; i++) l.push(9);
-  for (let i = 0; i < 24; i++) l.push(7);
-  for (let i = 0; i < 8; i++) l.push(8);
+  for (let i = 0; i < 144; i++) {l.push(8);}
+  for (let i = 0; i < 112; i++) {l.push(9);}
+  for (let i = 0; i < 24; i++) {l.push(7);}
+  for (let i = 0; i < 8; i++) {l.push(8);}
   return l;
 })();
 
@@ -515,26 +531,26 @@ function readClSeq(r, clTable, need) {
   const acc = [];
   while (acc.length < need) {
     const s = decodeSym(r, clTable, 7);
-    if (s === null) return null;
-    if (s <= 15) acc.push(s);
+    if (s === null) {return null;}
+    if (s <= 15) {acc.push(s);}
     else if (s === 16) {
-      if (acc.length === 0) return null;
+      if (acc.length === 0) {return null;}
       const k = readBits(r, 2);
-      if (k === null) return null;
-      if (!(acc.length + k + 3 <= need)) return null;
+      if (k === null) {return null;}
+      if (!(acc.length + k + 3 <= need)) {return null;}
       const prevv = acc[acc.length - 1];
-      for (let i = 0; i < k + 3; i++) acc.push(prevv);
+      for (let i = 0; i < k + 3; i++) {acc.push(prevv);}
     } else if (s === 17) {
       const k = readBits(r, 3);
-      if (k === null) return null;
-      if (!(acc.length + k + 3 <= need)) return null;
-      for (let i = 0; i < k + 3; i++) acc.push(0);
+      if (k === null) {return null;}
+      if (!(acc.length + k + 3 <= need)) {return null;}
+      for (let i = 0; i < k + 3; i++) {acc.push(0);}
     } else if (s === 18) {
       const k = readBits(r, 7);
-      if (k === null) return null;
-      if (!(acc.length + k + 11 <= need)) return null;
-      for (let i = 0; i < k + 11; i++) acc.push(0);
-    } else return null;
+      if (k === null) {return null;}
+      if (!(acc.length + k + 11 <= need)) {return null;}
+      for (let i = 0; i < k + 11; i++) {acc.push(0);}
+    } else {return null;}
   }
   return acc;
 }
@@ -544,16 +560,16 @@ function readDynHeader(r) {
   const hlit = readBits(r, 5);
   const hdist = readBits(r, 5);
   const hclen = readBits(r, 4);
-  if (hlit === null || hdist === null || hclen === null) return null;
+  if (hlit === null || hdist === null || hclen === null) {return null;}
   const clLens = new Array(19).fill(0);
   for (let p = 0; p < hclen + 4; p++) {
     const v = readBits(r, 3);
-    if (v === null) return null;
+    if (v === null) {return null;}
     clLens[CL_ORDER[p]] = v;
   }
   const clTable = decodeTable(canonicalCodes(7, clLens));
   const combined = readClSeq(r, clTable, hlit + 257 + (hdist + 1));
-  if (combined === null) return null;
+  if (combined === null) {return null;}
   return [combined.slice(0, hlit + 257), combined.slice(hlit + 257)];
 }
 
@@ -561,29 +577,29 @@ function readDynHeader(r) {
 function decodeTokens(r, litTable, distTable_, out) {
   for (;;) {
     const sym = decodeSym(r, litTable, 15);
-    if (sym === null) return false;
-    if (sym === 256) return true;
+    if (sym === null) {return false;}
+    if (sym === 256) {return true;}
     if (sym < 256) {
       out.push(sym);
       continue;
     }
     const lb = lenSymBase(sym);
-    if (lb === null) return false;
+    if (lb === null) {return false;}
     const ev = readBits(r, lb[1]);
-    if (ev === null) return false;
+    if (ev === null) {return false;}
     const len = lb[0] + ev;
     const dsym = decodeSym(r, distTable_, 15);
-    if (dsym === null) return false;
+    if (dsym === null) {return false;}
     const db = distSymBase(dsym);
-    if (db === null) return false;
+    if (db === null) {return false;}
     const dv = readBits(r, db[1]);
-    if (dv === null) return false;
+    if (dv === null) {return false;}
     const dist = db[0] + dv;
     if (!(1 <= dist && dist <= out.length && dist <= 32768 && 3 <= len && len <= 258)) {
       return false;
     }
     // Lean: TarGz.lzCopy — per-byte copy, self-overlap = RLE
-    for (let j = 0; j < len; j++) out.push(out[out.length - dist]);
+    for (let j = 0; j < len; j++) {out.push(out[out.length - dist]);}
   }
 }
 
@@ -594,16 +610,16 @@ export function inflate(bytes) {
   for (;;) {
     const bfinal = readBits(r, 1);
     const btype = readBits(r, 2);
-    if (bfinal === null || btype === null) return null;
+    if (bfinal === null || btype === null) {return null;}
     if (btype === 0) {
       const pad = (8 - (r.pos % 8)) % 8;
-      if (readBits(r, pad) === null) return null;
+      if (readBits(r, pad) === null) {return null;}
       const len = readBits(r, 16);
       const nlen = readBits(r, 16);
-      if (len === null || nlen === null || nlen !== 65535 - len) return null;
+      if (len === null || nlen === null || nlen !== 65535 - len) {return null;}
       for (let i = 0; i < len; i++) {
         const b = readBits(r, 8);
-        if (b === null) return null;
+        if (b === null) {return null;}
         out.push(b);
       }
     } else if (btype === 1) {
@@ -613,18 +629,18 @@ export function inflate(bytes) {
         decodeTable(canonicalCodes(15, FIXED_DIST_LENS)),
         out
       );
-      if (!ok) return null;
+      if (!ok) {return null;}
     } else if (btype === 2) {
       const hdr = readDynHeader(r);
-      if (hdr === null) return null;
+      if (hdr === null) {return null;}
       const ok = decodeTokens(
         r,
         decodeTable(canonicalCodes(15, hdr[0])),
         decodeTable(canonicalCodes(15, hdr[1])),
         out
       );
-      if (!ok) return null;
-    } else return null;
+      if (!ok) {return null;}
+    } else {return null;}
     if (bfinal === 1) {
       return [Uint8Array.from(out), Math.floor((r.pos + 7) / 8)];
     }
@@ -643,7 +659,7 @@ function writeLE32(out, v) {
 export function gzip(data) {
   const deflated = deflate(data);
   const out = [0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 255];
-  for (const b of deflated) out.push(b);
+  for (const b of deflated) {out.push(b);}
   writeLE32(out, crc32(data));
   writeLE32(out, data.length % 4294967296);
   return Uint8Array.from(out);
@@ -657,36 +673,36 @@ export function gunzip(bytes) {
   const flg = bytes[3];
   let p = 10;
   if (flg & 4) {
-    if (p + 2 > bytes.length) return null;
+    if (p + 2 > bytes.length) {return null;}
     const xlen = bytes[p] + 256 * bytes[p + 1];
     p += 2;
-    if (p + xlen > bytes.length) return null;
+    if (p + xlen > bytes.length) {return null;}
     p += xlen;
   }
   if (flg & 8) {
-    while (p < bytes.length && bytes[p] !== 0) p++;
-    if (p >= bytes.length) return null;
+    while (p < bytes.length && bytes[p] !== 0) {p++;}
+    if (p >= bytes.length) {return null;}
     p++;
   }
   if (flg & 16) {
-    while (p < bytes.length && bytes[p] !== 0) p++;
-    if (p >= bytes.length) return null;
+    while (p < bytes.length && bytes[p] !== 0) {p++;}
+    if (p >= bytes.length) {return null;}
     p++;
   }
   if (flg & 2) {
-    if (p + 2 > bytes.length) return null;
+    if (p + 2 > bytes.length) {return null;}
     p += 2;
   }
   const res = inflate(bytes.subarray(p));
-  if (res === null) return null;
+  if (res === null) {return null;}
   const [payload, consumed] = res;
   const t = p + consumed;
-  if (t + 8 > bytes.length) return null;
+  if (t + 8 > bytes.length) {return null;}
   const crcv =
     (bytes[t] + 256 * bytes[t + 1] + 65536 * bytes[t + 2] + 16777216 * bytes[t + 3]) >>> 0;
   const isize =
     bytes[t + 4] + 256 * bytes[t + 5] + 65536 * bytes[t + 6] + 16777216 * bytes[t + 7];
-  if (crcv !== crc32(payload) || isize !== payload.length % 4294967296) return null;
+  if (crcv !== crc32(payload) || isize !== payload.length % 4294967296) {return null;}
   return payload;
 }
 
@@ -697,14 +713,14 @@ export function gunzip(bytes) {
 
 // Lean: TarGz.octEnc — w-1 zero-padded octal digits, then NUL
 function octEnc(out, w, n) {
-  for (let i = w - 2; i >= 0; i--) out.push(0x30 + (Math.floor(n / 8 ** i) % 8));
+  for (let i = w - 2; i >= 0; i--) {out.push(0x30 + (Math.floor(n / 8 ** i) % 8));}
   out.push(0);
 }
 
 // Lean: TarGz.octDec — tolerant: skip leading spaces, octal digits, ignore rest
 function octDec(field) {
   let i = 0;
-  while (i < field.length && field[i] === 0x20) i++;
+  while (i < field.length && field[i] === 0x20) {i++;}
   let any = false;
   let v = 0;
   while (i < field.length && 0x30 <= field[i] && field[i] <= 0x37) {
@@ -716,21 +732,21 @@ function octDec(field) {
 }
 
 function padTo(out, upto) {
-  while (out.length < upto) out.push(0);
+  while (out.length < upto) {out.push(0);}
 }
 
 // Lean: TarGz.mkHeader / headerFields
 function mkHeader(nameBytes, dataLen) {
   const mk = (chk) => {
     const h = [];
-    for (const b of nameBytes) h.push(b); // name, offset 0
+    for (const b of nameBytes) {h.push(b);} // name, offset 0
     padTo(h, 100);
     octEnc(h, 8, 0o644); // mode
     octEnc(h, 8, 0); // uid
     octEnc(h, 8, 0); // gid
     octEnc(h, 12, dataLen); // size
     octEnc(h, 12, 0); // mtime
-    for (const b of chk) h.push(b); // chksum (8 bytes)
+    for (const b of chk) {h.push(b);} // chksum (8 bytes)
     h.push(0x30); // typeflag '0'
     padTo(h, 257);
     h.push(0x75, 0x73, 0x74, 0x61, 0x72, 0x00, 0x30, 0x30); // "ustar\0" "00"
@@ -742,7 +758,7 @@ function mkHeader(nameBytes, dataLen) {
   };
   const spaces = mk([0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20]);
   let sum = 0;
-  for (const b of spaces) sum += b;
+  for (const b of spaces) {sum += b;}
   const chk = [];
   octEnc(chk, 7, sum);
   chk.push(0x20);
@@ -763,11 +779,11 @@ function validEntry(nameBytes, data) {
 export function tar(entries) {
   const out = [];
   for (const e of entries) {
-    for (const b of mkHeader(e.name, e.data.length)) out.push(b);
-    for (const b of e.data) out.push(b);
+    for (const b of mkHeader(e.name, e.data.length)) {out.push(b);}
+    for (const b of e.data) {out.push(b);}
     padTo(out, out.length + ((512 - (e.data.length % 512)) % 512));
   }
-  for (let i = 0; i < 1024; i++) out.push(0);
+  for (let i = 0; i < 1024; i++) {out.push(0);}
   return Uint8Array.from(out);
 }
 
@@ -778,23 +794,23 @@ export function untar(bytes) {
   let off = 0;
   for (;;) {
     const header = bytes.subarray(off, off + 512);
-    if (header.length < 512) return null;
-    if (header.every((b) => b === 0)) return entries;
+    if (header.length < 512) {return null;}
+    if (header.every((b) => b === 0)) {return entries;}
     const size = octDec(header.subarray(124, 136));
     const stored = octDec(header.subarray(148, 156));
-    if (size === null || stored === null) return null;
+    if (size === null || stored === null) {return null;}
     let sum = 0;
-    for (let i = 0; i < 512; i++) sum += i >= 148 && i < 156 ? 0x20 : header[i];
-    if (sum !== stored) return null;
+    for (let i = 0; i < 512; i++) {sum += i >= 148 && i < 156 ? 0x20 : header[i];}
+    if (sum !== stored) {return null;}
     const bodyOff = off + 512;
     const padded = Math.floor((size + 511) / 512) * 512;
     const tf = header[156];
     if (tf === 0x30 || tf === 0x00) {
       let nameEnd = 0;
-      while (nameEnd < 100 && header[nameEnd] !== 0) nameEnd++;
+      while (nameEnd < 100 && header[nameEnd] !== 0) {nameEnd++;}
       const rawName = Array.from(header.subarray(0, nameEnd));
       let preEnd = 345;
-      while (preEnd < 500 && header[preEnd] !== 0) preEnd++;
+      while (preEnd < 500 && header[preEnd] !== 0) {preEnd++;}
       const prefixF = Array.from(header.subarray(345, preEnd));
       const name = prefixF.length === 0 ? rawName : prefixF.concat([0x2f], rawName);
       entries.push({
@@ -830,13 +846,17 @@ export function create(entries) {
 // returns [{ name: string, nameBytes: Uint8Array, data: Uint8Array }] | null
 export function extract(bytes) {
   const payload = gunzip(bytes);
-  if (payload === null) return null;
+  if (payload === null) {return null;}
   const es = untar(payload);
-  if (es === null) return null;
+  if (es === null) {return null;}
   return es.map((e) => ({ name: utf8decode(e.name), nameBytes: e.name, data: e.data }));
 }
 
 /* ================================= CLI ================================== */
+// the CLI is exercised end-to-end by the spawned
+// differential and interop test suites (child processes are invisible to
+// in-process V8 coverage).
+/* node:coverage disable */
 
 const USAGE = `usage:
   node targz.mjs c <out.tar.gz> <files...>    create archive
@@ -844,7 +864,7 @@ const USAGE = `usage:
   node targz.mjs t <archive.tar.gz>           list contents`;
 
 function safeRelative(name) {
-  if (name.startsWith("/") || name.startsWith("\\") || /^[A-Za-z]:/.test(name)) return false;
+  if (name.startsWith("/") || name.startsWith("\\") || /^[A-Za-z]:/.test(name)) {return false;}
   return name.split("/").every((seg) => seg !== ".." && seg !== "");
 }
 
@@ -869,7 +889,7 @@ async function runCli() {
     const archive = rest[0];
     let dir = ".";
     const ci = rest.indexOf("-C");
-    if (ci >= 0 && rest[ci + 1]) dir = rest[ci + 1];
+    if (ci >= 0 && rest[ci + 1]) {dir = rest[ci + 1];}
     const entries = extract(new Uint8Array(fs.readFileSync(archive)));
     if (entries === null) {
       console.error("error: not a valid .tar.gz archive (or checksum mismatch)");

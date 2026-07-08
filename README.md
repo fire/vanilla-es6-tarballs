@@ -95,6 +95,8 @@ and the fallback it guards is dead code (kept as belt and suspenders).
 
 ```powershell
 lake build            # proofs + #guard vectors + axiom snapshots + Lean CLI
+npm run test:coverage # + built-in V8 coverage (~99.7% lines, 100% functions;
+                      # the verified stored fallback and the CLI are annotated)
 node --test test/     # JS round trips, node:zlib cross-reference (both
                       # directions incl. stored blocks and FEXTRA/FNAME
                       # headers), tar.exe (bsdtar) interop both directions,

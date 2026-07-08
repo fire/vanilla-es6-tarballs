@@ -66,6 +66,27 @@ test("we read system tar archives (ustar)", { skip: TAR === null && "no tar.exe"
 });
 
 test(
+  "we read bsdtar ustar archives with prefix-split long paths",
+  { skip: TAR === null && "no tar.exe" },
+  () => {
+    const src = path.join(tmp, "src-long");
+    const deep = "level1-abcdefghij/level2-abcdefghij/level3-abcdefghij/level4-abcdefghij/level5-abcdefghij";
+    fs.mkdirSync(path.join(src, ...deep.split("/")), { recursive: true });
+    const payload = new TextEncoder().encode("deep file\n");
+    const rel = `${deep}/leaf-file-with-a-rather-long-name.txt`; // > 100 chars total
+    fs.writeFileSync(path.join(src, ...rel.split("/")), payload);
+    const archive = path.join(tmp, "theirs-long.tgz");
+    execFileSync(TAR, ["-czf", archive, "--format=ustar", "-C", src, rel]);
+
+    const entries = extract(new Uint8Array(fs.readFileSync(archive)));
+    assert.notEqual(entries, null);
+    const leaf = entries.find((e) => e.name === rel);
+    assert.ok(leaf, `expected joined prefix name ${rel}, got ${entries.map((e) => e.name)}`);
+    assert.deepEqual(leaf.data, payload);
+  }
+);
+
+test(
   "we read system tar default format (pax headers are skipped)",
   { skip: TAR === null && "no tar.exe" },
   () => {
