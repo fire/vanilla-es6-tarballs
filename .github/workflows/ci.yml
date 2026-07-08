@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: 2026 K. S. Ernest (iFire) Lee
+# SPDX-License-Identifier: MIT
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan (Lean toolchain manager)
+        run: |
+          curl -sSfL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache lake build
+        uses: actions/cache@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lakefile.toml') }}
+
+      - name: Proofs, #guard vectors, axiom snapshots, Lean CLI
+        run: lake build
+
+      - name: sorry / native_decide hygiene
+        shell: pwsh
+        run: ./scripts/check-no-sorry.ps1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Node tests (round trips, zlib reference, GNU tar interop, differential)
+        run: npm test
+
+      - name: Install Playwright Chromium
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Browser tests (vanilla ES6 core in Chromium)
+        run: npx playwright test

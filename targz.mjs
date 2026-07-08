@@ -466,12 +466,10 @@ function encodeTokens(w, litC, distC, toks) {
   encodeSym(w, litC, 256);
 }
 
-// Lean: TarGz.encodeStoredBlock / encodeStored / storedChunks
-// the verified stored fallback: only taken when the
-// DynOk runtime check fails, and TarGz.canonical_prefixFree proves the
-// PrefixFree component of that check can never fail. Kept (like in the Lean
-// model) as belt and suspenders.
-/* node:coverage disable */
+// Lean: TarGz.encodeStoredBlock / encodeStored / storedChunks — taken when
+// stored blocks beat the dynamic table header (tiny or incompressible
+// inputs), or as the verified fallback should DynOk ever fail (which
+// TarGz.canonical_prefixFree proves it cannot for its PrefixFree component).
 function writeStored(w, data) {
   let off = 0;
   do {
@@ -486,9 +484,19 @@ function writeStored(w, data) {
     off += chunk.length;
   } while (off < data.length);
 }
-/* node:coverage enable */
 
-// Lean: TarGz.encodeBlockDyn + deflate — dynamic block or stored fallback
+// Lean: TarGz.encodeStored length — 40 header bits per chunk + 8 per byte
+function storedBitLength(n) {
+  const chunks = n <= 65535 ? 1 : Math.ceil(n / 65535);
+  return 40 * chunks + 8 * n;
+}
+
+/**
+ * Compress with DEFLATE (RFC 1951): one final dynamic-Huffman block, unless
+ * stored blocks are strictly smaller. Lean: TarGz.encodeBlockDyn + deflate.
+ * @param {Uint8Array} data
+ * @returns {Uint8Array} raw DEFLATE stream (readable by any inflater)
+ */
 export function deflate(data) {
   const w = bitWriter();
   const toks = tokenize(data);
@@ -505,12 +513,18 @@ export function deflate(data) {
     writeBits(w, 2, 2);
     writeDynHeader(w, litLens, distLens, clLens, clC);
     encodeTokens(w, litC, distC, toks);
+    // Lean: the stored-when-smaller comparison, on bit lengths
+    if (storedBitLength(data.length) < w.bytes.length * 8 + w.cnt) {
+      const ws = bitWriter();
+      writeStored(ws, data);
+      return finishBits(ws);
+    }
   } else {
+    // Unreachable in practice: canonical_prefixFree + the DynOk suite.
     /* node:coverage disable */
-    // see writeStored above.
     writeStored(w, data);
+    /* node:coverage enable */
   }
-  /* node:coverage enable */
   return finishBits(w);
 }
 
@@ -573,9 +587,12 @@ function readDynHeader(r) {
   return [combined.slice(0, hlit + 257), combined.slice(hlit + 257)];
 }
 
-// Lean: TarGz.decodeTokens — identical validity conditions to `resolve`
-function decodeTokens(r, litTable, distTable_, out) {
+// Lean: TarGz.decodeTokens — identical validity conditions to `resolve`.
+// `maxBytes` is a decode-only safety extension over the Lean spec: it can
+// only reject more inputs (decompression-bomb cap), never accept more.
+function decodeTokens(r, litTable, distTable_, out, maxBytes) {
   for (;;) {
+    if (out.length > maxBytes) {return false;}
     const sym = decodeSym(r, litTable, 15);
     if (sym === null) {return false;}
     if (sym === 256) {return true;}
@@ -603,8 +620,15 @@ function decodeTokens(r, litTable, distTable_, out) {
   }
 }
 
-// Lean: TarGz.inflateLoop / inflate — returns [payload, bytesConsumed] | null
-export function inflate(bytes) {
+/**
+ * Decompress a raw DEFLATE stream (stored, fixed and dynamic blocks).
+ * Lean: TarGz.inflateLoop / inflate.
+ * @param {Uint8Array} bytes
+ * @param {{maxBytes?: number}} [opts] decompression cap for untrusted input
+ * @returns {[Uint8Array, number] | null} [payload, bytesConsumed], or null
+ */
+export function inflate(bytes, opts = {}) {
+  const maxBytes = opts.maxBytes ?? Infinity;
   const r = bitReader(bytes);
   const out = [];
   for (;;) {
@@ -617,6 +641,7 @@ export function inflate(bytes) {
       const len = readBits(r, 16);
       const nlen = readBits(r, 16);
       if (len === null || nlen === null || nlen !== 65535 - len) {return null;}
+      if (out.length + len > maxBytes) {return null;}
       for (let i = 0; i < len; i++) {
         const b = readBits(r, 8);
         if (b === null) {return null;}
@@ -627,7 +652,8 @@ export function inflate(bytes) {
         r,
         decodeTable(canonicalCodes(15, FIXED_LIT_LENS)),
         decodeTable(canonicalCodes(15, FIXED_DIST_LENS)),
-        out
+        out,
+        maxBytes
       );
       if (!ok) {return null;}
     } else if (btype === 2) {
@@ -637,10 +663,12 @@ export function inflate(bytes) {
         r,
         decodeTable(canonicalCodes(15, hdr[0])),
         decodeTable(canonicalCodes(15, hdr[1])),
-        out
+        out,
+        maxBytes
       );
       if (!ok) {return null;}
     } else {return null;}
+    if (out.length > maxBytes) {return null;}
     if (bfinal === 1) {
       return [Uint8Array.from(out), Math.floor((r.pos + 7) / 8)];
     }
@@ -665,8 +693,8 @@ export function gzip(data) {
   return Uint8Array.from(out);
 }
 
-// Lean: TarGz.gunzip — skips FEXTRA/FNAME/FCOMMENT/FHCRC, verifies CRC+ISIZE
-export function gunzip(bytes) {
+// One gzip member starting at the beginning of `bytes` → [payload, end] | null
+function gunzipMember(bytes, maxBytes) {
   if (bytes.length < 10 || bytes[0] !== 0x1f || bytes[1] !== 0x8b || bytes[2] !== 8) {
     return null;
   }
@@ -693,7 +721,7 @@ export function gunzip(bytes) {
     if (p + 2 > bytes.length) {return null;}
     p += 2;
   }
-  const res = inflate(bytes.subarray(p));
+  const res = inflate(bytes.subarray(p), { maxBytes });
   if (res === null) {return null;}
   const [payload, consumed] = res;
   const t = p + consumed;
@@ -703,7 +731,39 @@ export function gunzip(bytes) {
   const isize =
     bytes[t + 4] + 256 * bytes[t + 5] + 65536 * bytes[t + 6] + 16777216 * bytes[t + 7];
   if (crcv !== crc32(payload) || isize !== payload.length % 4294967296) {return null;}
-  return payload;
+  return [payload, t + 8];
+}
+
+/**
+ * Decompress a gzip file. Skips FEXTRA/FNAME/FCOMMENT/FHCRC header fields
+ * and verifies CRC-32 and ISIZE per member. Multi-member files (RFC 1952
+ * §2.2, e.g. pigz/`cat a.gz b.gz`) are concatenated — a reader-side
+ * extension over the single-member Lean model (TarGz.gunzip); non-gzip
+ * trailing bytes after the last member are ignored.
+ * @param {Uint8Array} bytes
+ * @param {{maxBytes?: number}} [opts] total decompression cap
+ * @returns {Uint8Array | null}
+ */
+export function gunzip(bytes, opts = {}) {
+  const maxBytes = opts.maxBytes ?? Infinity;
+  const parts = [];
+  let total = 0;
+  let off = 0;
+  do {
+    const m = gunzipMember(bytes.subarray(off), maxBytes - total);
+    if (m === null) {return null;}
+    parts.push(m[0]);
+    total += m[0].length;
+    off += m[1];
+  } while (off + 2 <= bytes.length && bytes[off] === 0x1f && bytes[off + 1] === 0x8b);
+  if (parts.length === 1) {return parts[0];}
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
+  return out;
 }
 
 /* ============================ USTAR ======================================
@@ -736,18 +796,18 @@ function padTo(out, upto) {
 }
 
 // Lean: TarGz.mkHeader / headerFields
-function mkHeader(nameBytes, dataLen) {
+function mkHeader(e) {
   const mk = (chk) => {
     const h = [];
-    for (const b of nameBytes) {h.push(b);} // name, offset 0
+    for (const b of e.name) {h.push(b);} // name, offset 0
     padTo(h, 100);
-    octEnc(h, 8, 0o644); // mode
+    octEnc(h, 8, e.mode); // mode
     octEnc(h, 8, 0); // uid
     octEnc(h, 8, 0); // gid
-    octEnc(h, 12, dataLen); // size
-    octEnc(h, 12, 0); // mtime
+    octEnc(h, 12, e.data.length); // size
+    octEnc(h, 12, e.mtime); // mtime
     for (const b of chk) {h.push(b);} // chksum (8 bytes)
-    h.push(0x30); // typeflag '0'
+    h.push(e.dir ? 0x35 : 0x30); // typeflag '5' directory / '0' file
     padTo(h, 257);
     h.push(0x75, 0x73, 0x74, 0x61, 0x72, 0x00, 0x30, 0x30); // "ustar\0" "00"
     padTo(h, 329); // uname(32) + gname(32), NUL
@@ -766,20 +826,28 @@ function mkHeader(nameBytes, dataLen) {
 }
 
 // Lean: TarGz.ValidEntry
-function validEntry(nameBytes, data) {
+function validEntry(e) {
   return (
-    nameBytes.length > 0 &&
-    nameBytes.length <= 100 &&
-    !nameBytes.includes(0) &&
-    data.length < 8 ** 11
+    e.name.length > 0 &&
+    e.name.length <= 100 &&
+    !e.name.includes(0) &&
+    e.data.length < 8 ** 11 &&
+    e.mode < 8 ** 7 &&
+    e.mtime < 8 ** 11 &&
+    (!e.dir || e.data.length === 0)
   );
 }
 
-// Lean: TarGz.tarBytes — entries: [{ name: Uint8Array, data: Uint8Array }]
+/**
+ * Serialize USTAR entries (no gzip layer). Lean: TarGz.tarBytes.
+ * @param {Array<{name: Uint8Array, mode: number, mtime: number,
+ *   dir: boolean, data: Uint8Array}>} entries fully-normalized entries
+ * @returns {Uint8Array}
+ */
 export function tar(entries) {
   const out = [];
   for (const e of entries) {
-    for (const b of mkHeader(e.name, e.data.length)) {out.push(b);}
+    for (const b of mkHeader(e)) {out.push(b);}
     for (const b of e.data) {out.push(b);}
     padTo(out, out.length + ((512 - (e.data.length % 512)) % 512));
   }
@@ -787,16 +855,71 @@ export function tar(entries) {
   return Uint8Array.from(out);
 }
 
-// Lean: TarGz.untarBytes / untar — tolerant ustar reader (prefix join,
-// checksum verify, skips dirs / pax x,g / GNU L,K / other typeflags)
+// GNU base-256 (binary) numeric field: first byte has the 0x80 bit set.
+// Reader-side tolerance beyond the Lean model (which specs the octal subset).
+function tarNumber(field) {
+  if (field.length > 0 && field[0] & 0x80) {
+    let v = field[0] & 0x7f;
+    for (let i = 1; i < field.length; i++) {
+      v = v * 256 + field[i];
+      if (v > Number.MAX_SAFE_INTEGER / 256) {return null;}
+    }
+    return v;
+  }
+  return octDec(field);
+}
+
+// Parse pax extended-header records: "len key=value\n"… → Map(key → bytes).
+function paxRecords(body) {
+  const m = new Map();
+  let i = 0;
+  while (i < body.length) {
+    let len = 0;
+    let j = i;
+    while (j < body.length && body[j] !== 0x20) {
+      if (body[j] < 0x30 || body[j] > 0x39) {return m;}
+      len = len * 10 + (body[j] - 0x30);
+      j++;
+    }
+    if (len < 3 || i + len > body.length) {return m;}
+    const rec = body.subarray(j + 1, i + len - 1); // between space and \n
+    const eq = rec.indexOf(0x3d);
+    if (eq > 0) {
+      m.set(new TextDecoder().decode(rec.subarray(0, eq)), rec.subarray(eq + 1));
+    }
+    i += len;
+  }
+  return m;
+}
+
+function headerName(header) {
+  let nameEnd = 0;
+  while (nameEnd < 100 && header[nameEnd] !== 0) {nameEnd++;}
+  const rawName = Array.from(header.subarray(0, nameEnd));
+  let preEnd = 345;
+  while (preEnd < 500 && header[preEnd] !== 0) {preEnd++;}
+  const prefixF = Array.from(header.subarray(345, preEnd));
+  return prefixF.length === 0 ? rawName : prefixF.concat([0x2f], rawName);
+}
+
+/**
+ * Parse a tar stream. Lean: TarGz.untarBytes / untar — tolerant ustar reader
+ * (prefix join, checksum verify), extended reader-side with pax `path`/GNU
+ * `L` long names and GNU base-256 sizes; pax g / GNU K / other typeflags are
+ * skipped.
+ * @param {Uint8Array} bytes
+ * @returns {Array<{name: Uint8Array, mode: number, mtime: number,
+ *   dir: boolean, data: Uint8Array}> | null}
+ */
 export function untar(bytes) {
   const entries = [];
   let off = 0;
+  let nextName = null; // long-name override from pax 'x' or GNU 'L'
   for (;;) {
     const header = bytes.subarray(off, off + 512);
     if (header.length < 512) {return null;}
     if (header.every((b) => b === 0)) {return entries;}
-    const size = octDec(header.subarray(124, 136));
+    const size = tarNumber(header.subarray(124, 136));
     const stored = octDec(header.subarray(148, 156));
     if (size === null || stored === null) {return null;}
     let sum = 0;
@@ -805,18 +928,35 @@ export function untar(bytes) {
     const bodyOff = off + 512;
     const padded = Math.floor((size + 511) / 512) * 512;
     const tf = header[156];
-    if (tf === 0x30 || tf === 0x00) {
-      let nameEnd = 0;
-      while (nameEnd < 100 && header[nameEnd] !== 0) {nameEnd++;}
-      const rawName = Array.from(header.subarray(0, nameEnd));
-      let preEnd = 345;
-      while (preEnd < 500 && header[preEnd] !== 0) {preEnd++;}
-      const prefixF = Array.from(header.subarray(345, preEnd));
-      const name = prefixF.length === 0 ? rawName : prefixF.concat([0x2f], rawName);
+    const mode = octDec(header.subarray(100, 108)) ?? 0;
+    const mtime = tarNumber(header.subarray(136, 148)) ?? 0;
+    if (tf === 0x30 || tf === 0x00 || tf === 0x35) {
+      const name = nextName ?? headerName(header);
+      nextName = null;
+      const dir = tf === 0x35;
       entries.push({
         name: Uint8Array.from(name),
-        data: bytes.slice(bodyOff, bodyOff + size),
+        mode,
+        mtime,
+        dir,
+        data: dir ? new Uint8Array(0) : bytes.slice(bodyOff, bodyOff + size),
       });
+    } else if (tf === 0x78) {
+      // pax extended header for the NEXT entry: honor `path`
+      const p = paxRecords(bytes.subarray(bodyOff, bodyOff + size)).get("path");
+      if (p !== undefined) {
+        let end = p.length;
+        while (end > 0 && p[end - 1] === 0) {end--;}
+        nextName = Array.from(p.subarray(0, end));
+      }
+    } else if (tf === 0x4c) {
+      // GNU 'L': body is the NUL-terminated long name of the next entry
+      const body = bytes.subarray(bodyOff, bodyOff + size);
+      let end = body.length;
+      while (end > 0 && body[end - 1] === 0) {end--;}
+      nextName = Array.from(body.subarray(0, end));
+    } else {
+      nextName = null; // pax 'g', GNU 'K', devices, links …: skip
     }
     off = bodyOff + padded;
   }
@@ -826,30 +966,94 @@ export function untar(bytes) {
  * Lean: TarGz.Correctness (create / extract; proved extract_create)
  */
 
+/** Library version (also `node targz.mjs --version`). */
+export const VERSION = "1.0.0";
+
 const utf8encode = (s) => new TextEncoder().encode(s);
 const utf8decode = (b) => new TextDecoder("utf-8", { fatal: false }).decode(b);
 
-// entries: [{ name: string | Uint8Array, data: Uint8Array }]
+/**
+ * Create a .tar.gz archive (USTAR, uid/gid 0, single gzip member).
+ * Deterministic: identical entries always produce identical bytes.
+ * Lean: TarGz.create (proved: `extract (create es) = some es`).
+ * @param {Array<{name: string | Uint8Array, data?: Uint8Array,
+ *   mode?: number, mtime?: number, dir?: boolean}>} entries
+ *   name: '/'-separated relative path, 1..100 UTF-8 bytes, no NUL (give
+ *   directories a trailing '/'); mode: permission bits (default 0644, or
+ *   0755 for directories); mtime: seconds since epoch (default 0);
+ *   dir: directory entry (data must be absent or empty)
+ * @returns {Uint8Array}
+ * @throws {TypeError} on malformed arguments
+ * @throws {Error} on invalid names, metadata out of field range, oversized data
+ */
 export function create(entries) {
-  const es = entries.map((e) => ({
-    name: typeof e.name === "string" ? utf8encode(e.name) : e.name,
-    data: e.data,
-  }));
+  if (!Array.isArray(entries)) {
+    throw new TypeError("create: entries must be an array");
+  }
+  const es = entries.map((e, i) => {
+    if (e === null || typeof e !== "object") {
+      throw new TypeError(`create: entry ${i} must be an object`);
+    }
+    if (typeof e.name !== "string" && !(e.name instanceof Uint8Array)) {
+      throw new TypeError(`create: entry ${i} name must be a string or Uint8Array`);
+    }
+    const dir = e.dir === true;
+    const data = e.data ?? new Uint8Array(0);
+    if (!(data instanceof Uint8Array)) {
+      throw new TypeError(`create: entry ${i} data must be a Uint8Array`);
+    }
+    const mode = e.mode ?? (dir ? 0o755 : 0o644);
+    const mtime = e.mtime ?? 0;
+    if (!Number.isInteger(mode) || mode < 0 || !Number.isInteger(mtime) || mtime < 0) {
+      throw new TypeError(`create: entry ${i} mode/mtime must be non-negative integers`);
+    }
+    return {
+      name: typeof e.name === "string" ? utf8encode(e.name) : e.name,
+      mode,
+      mtime,
+      dir,
+      data,
+    };
+  });
   for (const e of es) {
-    if (!validEntry(e.name, e.data)) {
-      throw new Error(`invalid entry name/data: ${utf8decode(e.name)}`);
+    if (!validEntry(e)) {
+      throw new Error(
+        `create: invalid entry "${utf8decode(e.name)}" ` +
+          "(name 1..100 UTF-8 bytes without NUL; data < 8^11 bytes; " +
+          "mode < 8^7; mtime < 8^11; directories carry no data)"
+      );
     }
   }
   return gzip(tar(es));
 }
 
-// returns [{ name: string, nameBytes: Uint8Array, data: Uint8Array }] | null
-export function extract(bytes) {
-  const payload = gunzip(bytes);
+/**
+ * Extract a .tar.gz archive. Verifies gzip CRC-32/ISIZE and tar header
+ * checksums; returns files and directories with their mode and mtime;
+ * honors ustar prefix, pax `path` and GNU `L` long names, GNU base-256
+ * sizes; skips other entry types. Lean: TarGz.extract.
+ * @param {Uint8Array} bytes
+ * @param {{maxBytes?: number}} [opts] decompression cap for untrusted input
+ * @returns {Array<{name: string, nameBytes: Uint8Array, data: Uint8Array,
+ *   mode: number, mtime: number, dir: boolean}> | null}
+ *   null if the archive is invalid, corrupt, or exceeds `maxBytes`
+ */
+export function extract(bytes, opts = {}) {
+  if (!(bytes instanceof Uint8Array)) {
+    throw new TypeError("extract: bytes must be a Uint8Array");
+  }
+  const payload = gunzip(bytes, opts);
   if (payload === null) {return null;}
   const es = untar(payload);
   if (es === null) {return null;}
-  return es.map((e) => ({ name: utf8decode(e.name), nameBytes: e.name, data: e.data }));
+  return es.map((e) => ({
+    name: utf8decode(e.name),
+    nameBytes: e.name,
+    data: e.data,
+    mode: e.mode,
+    mtime: e.mtime,
+    dir: e.dir,
+  }));
 }
 
 /* ================================= CLI ================================== */
@@ -858,60 +1062,124 @@ export function extract(bytes) {
 // in-process V8 coverage).
 /* node:coverage disable */
 
-const USAGE = `usage:
-  node targz.mjs c <out.tar.gz> <files...>    create archive
-  node targz.mjs x <archive.tar.gz> [-C dir]  extract archive
-  node targz.mjs t <archive.tar.gz>           list contents`;
+const USAGE = `targz ${VERSION} — dependency-free tar+gzip (Lean-verified model)
+usage:
+  node targz.mjs c <out.tar.gz> <paths...>                 create (dirs recurse)
+  node targz.mjs x <archive.tar.gz> [-C dir] [--max-size N] extract
+  node targz.mjs t <archive.tar.gz> [--max-size N]          list contents
+  node targz.mjs --help | --version
+notes:
+  create preserves mtimes; modes are canonicalized to 0644/0755 for
+  cross-platform determinism. extract restores mtimes and directories and
+  refuses absolute or '..' paths. --max-size caps decompressed bytes.`;
 
 function safeRelative(name) {
   if (name.startsWith("/") || name.startsWith("\\") || /^[A-Za-z]:/.test(name)) {return false;}
-  return name.split("/").every((seg) => seg !== ".." && seg !== "");
+  return name.split("/").every((seg) => seg !== ".." && seg !== "" && seg !== ".");
+}
+
+// Whole-second mtime, clamped to the 12-byte octal field (matches Main.lean).
+function mtimeOf(st) {
+  const s = Math.floor(st.mtimeMs / 1000);
+  return Math.min(Math.max(s, 0), 8 ** 11 - 1);
+}
+
+// Expand a path argument: files map to one entry; directories emit their own
+// entry then their children sorted byte-wise by UTF-8 name (matches Main.lean
+// so the Lean and JS CLIs stay byte-identical on identical trees).
+function expandArg(fs, path, arg, entries) {
+  const st = fs.statSync(arg);
+  const name = arg.replaceAll("\\", "/").replace(/\/+$/, "");
+  if (st.isDirectory()) {
+    entries.push({ name: `${name}/`, dir: true, mtime: mtimeOf(st) });
+    const enc = new TextEncoder();
+    const kids = fs
+      .readdirSync(arg)
+      .sort((a, b) => Buffer.compare(enc.encode(a), enc.encode(b)));
+    for (const k of kids) {
+      expandArg(fs, path, `${name}/${k}`, entries);
+    }
+  } else {
+    entries.push({
+      name,
+      data: new Uint8Array(fs.readFileSync(arg)),
+      mtime: mtimeOf(st),
+    });
+  }
 }
 
 async function runCli() {
   const fs = await import("node:fs");
   const path = await import("node:path");
-  const [cmd, ...rest] = process.argv.slice(2);
-  if (cmd === undefined) {
+  const args = process.argv.slice(2);
+  const [cmd, ...rest] = args;
+  if (cmd === undefined || cmd === "--help" || cmd === "-h") {
     console.log(USAGE);
     process.exit(0);
   }
-  if (cmd === "c" && rest.length >= 2) {
-    const [out, ...files] = rest;
-    const entries = files.map((f) => ({
-      name: f.replaceAll("\\", "/"),
-      data: new Uint8Array(fs.readFileSync(f)),
-    }));
-    fs.writeFileSync(out, create(entries));
-    return;
+  if (cmd === "--version") {
+    console.log(VERSION);
+    process.exit(0);
   }
-  if ((cmd === "x" || cmd === "t") && rest.length >= 1) {
-    const archive = rest[0];
-    let dir = ".";
-    const ci = rest.indexOf("-C");
-    if (ci >= 0 && rest[ci + 1]) {dir = rest[ci + 1];}
-    const entries = extract(new Uint8Array(fs.readFileSync(archive)));
-    if (entries === null) {
-      console.error("error: not a valid .tar.gz archive (or checksum mismatch)");
-      process.exit(1);
+  let maxBytes = Infinity;
+  const mi = rest.indexOf("--max-size");
+  if (mi >= 0) {
+    maxBytes = Number(rest[mi + 1]);
+    if (!Number.isFinite(maxBytes) || maxBytes < 0) {
+      console.error("error: --max-size expects a byte count");
+      process.exit(2);
     }
-    for (const e of entries) {
-      if (cmd === "t") {
-        console.log(e.name);
-        continue;
+    rest.splice(mi, 2);
+  }
+  try {
+    if (cmd === "c" && rest.length >= 2) {
+      const [out, ...paths] = rest;
+      const entries = [];
+      for (const p of paths) {
+        expandArg(fs, path, p, entries);
       }
-      if (!safeRelative(e.name)) {
-        console.error(`error: refusing unsafe path: ${e.name}`);
+      fs.writeFileSync(out, create(entries));
+      return;
+    }
+    if ((cmd === "x" || cmd === "t") && rest.length >= 1) {
+      const archive = rest[0];
+      let dir = ".";
+      const ci = rest.indexOf("-C");
+      if (ci >= 0 && rest[ci + 1]) {dir = rest[ci + 1];}
+      const entries = extract(new Uint8Array(fs.readFileSync(archive)), { maxBytes });
+      if (entries === null) {
+        console.error("error: not a valid .tar.gz archive (corrupt, truncated, or over --max-size)");
         process.exit(1);
       }
-      const target = path.join(dir, ...e.name.split("/"));
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, e.data);
+      for (const e of entries) {
+        if (cmd === "t") {
+          console.log(e.name);
+          continue;
+        }
+        const clean = e.name.replace(/\/+$/, "");
+        if (!safeRelative(clean)) {
+          console.error(`error: refusing unsafe path: ${e.name}`);
+          process.exit(1);
+        }
+        const target = path.join(dir, ...clean.split("/"));
+        if (e.dir) {
+          fs.mkdirSync(target, { recursive: true });
+        } else {
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          fs.writeFileSync(target, e.data);
+        }
+        if (e.mtime > 0) {
+          fs.utimesSync(target, e.mtime, e.mtime);
+        }
+      }
+      return;
     }
-    return;
+    console.error(USAGE);
+    process.exit(2);
+  } catch (err) {
+    console.error(`error: ${err?.message ?? err}`);
+    process.exit(1);
   }
-  console.error(USAGE);
-  process.exit(1);
 }
 
 // Node-only entry detection; in a browser this whole block is inert.

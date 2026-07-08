@@ -616,11 +616,15 @@ def encodeBlockDyn (d : List UInt8) : Option (List Bool) :=
       encodeTokens (canonicalCodes 15 litLens) (canonicalCodes 15 distLens) toks)
   else none
 
-/-- Compress: one final dynamic-Huffman block, with a stored-block fallback
-should the runtime validity check ever fail. -/
+/-- Compress: one final dynamic-Huffman block — unless stored blocks are
+strictly smaller (tiny or incompressible inputs, where the dynamic table
+header dominates), or the runtime validity check ever fails. This bounds the
+worst-case expansion at 5 bytes + 0.008% instead of a ~150-byte table. -/
 def deflate (d : List UInt8) : List UInt8 :=
   match encodeBlockDyn d with
-  | some bits => bitsToBytes bits
+  | some bits =>
+    let stored := encodeStored (storedChunks d)
+    if stored.length < bits.length then bitsToBytes stored else bitsToBytes bits
   | none => bitsToBytes (encodeStored (storedChunks d))
 
 /-- Decompress; returns the payload and the remaining input bytes after the
@@ -835,30 +839,37 @@ theorem inflate_bitsToBytes (d : List UInt8) (enc : List Bool)
 /-- Headline: decompressing a compressed stream with anything appended yields
 the payload and exactly the appended bytes — dynamic block or stored
 fallback alike. -/
+private theorem inflate_stored_branch (d trailer : List UInt8) :
+    inflate (bitsToBytes (encodeStored (storedChunks d)) ++ trailer)
+      = some (d, trailer) := by
+  apply inflate_bitsToBytes
+  intro r
+  have hloop := inflateLoop_encodeStored (storedChunks d)
+    ((encodeStored (storedChunks d) ++ r).length + 1)
+    ((encodeStored (storedChunks d) ++ r).length)
+    [] r
+    (storedChunks_ne_nil d) (storedChunks_le d)
+    (by
+      have := encodeStored_length_ge (storedChunks d)
+      simp only [List.length_append]
+      omega)
+    (by omega)
+    (by omega)
+  simpa [storedChunks_flatten] using hloop
+
 theorem inflate_deflate_append (d trailer : List UInt8) :
     inflate (deflate d ++ trailer) = some (d, trailer) := by
   unfold deflate
   cases hdyn : encodeBlockDyn d with
   | some bits =>
     simp only []
-    apply inflate_bitsToBytes
-    intro r
-    exact inflateLoop_dyn d bits hdyn (bits ++ r).length (bits ++ r).length r
+    split
+    · exact inflate_stored_branch d trailer
+    · apply inflate_bitsToBytes
+      intro r
+      exact inflateLoop_dyn d bits hdyn (bits ++ r).length (bits ++ r).length r
   | none =>
     simp only []
-    apply inflate_bitsToBytes
-    intro r
-    have hloop := inflateLoop_encodeStored (storedChunks d)
-      ((encodeStored (storedChunks d) ++ r).length + 1)
-      ((encodeStored (storedChunks d) ++ r).length)
-      [] r
-      (storedChunks_ne_nil d) (storedChunks_le d)
-      (by
-        have := encodeStored_length_ge (storedChunks d)
-        simp only [List.length_append]
-        omega)
-      (by omega)
-      (by omega)
-    simpa [storedChunks_flatten] using hloop
+    exact inflate_stored_branch d trailer
 
 end TarGz
