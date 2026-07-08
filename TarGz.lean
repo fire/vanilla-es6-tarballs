@@ -4,6 +4,7 @@
 import TarGz.Bits
 import TarGz.Crc32
 import TarGz.Huffman
+import TarGz.CanonicalPF
 import TarGz.HuffLen
 import TarGz.Lz77
 import TarGz.Deflate

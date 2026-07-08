@@ -51,6 +51,7 @@ Composed from, per layer:
 | `decodeSym_encodeSym` | canonical-Huffman decode∘encode = id for **any** prefix-free assignment |
 | `resolve_tokenize` | LZ77 detokenization reconstructs the input (overlap copies included), independent of the match-finder heuristics |
 | `crc32_eq_spec` | the table-driven CRC-32 equals the bit-serial specification |
+| `canonical_prefixFree` | the canonical code of **any** Kraft-valid length list is prefix-free (interval argument) |
 
 **Proof-carrying runtime checks.** The heuristic parts (Huffman code-length
 assignment, hash-chain match finding) are deliberately *outside* the trusted
@@ -59,9 +60,10 @@ predicates (`PrefixFree`, `WFLens`-style bounds, `DynOk`, and per-token
 `TokUsable` incl. the length/distance symbol tables), and falls back to
 verified stored blocks if a check ever fails. That makes the headline
 theorems **unconditional** without proving anything about heuristic quality.
-(The remaining "nice to have" structural theorem — that the canonical code of
-any Kraft-valid length assignment is always prefix-free, i.e. the fallback is
-dead code — is quality, not correctness.)
+On top of that, `canonical_prefixFree` (TarGz/CanonicalPF.lean) proves
+structurally that the canonical code of any Kraft-valid length assignment is
+prefix-free — so the `PrefixFree` half of the runtime check can never fail
+and the fallback it guards is dead code (kept as belt and suspenders).
 
 ## The transcription
 

@@ -30,3 +30,6 @@ snapshots below fail the build if any axiom set ever grows or changes.
 
 /-- info: 'TarGz.resolve_tokenize' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms TarGz.resolve_tokenize
+
+/-- info: 'TarGz.canonical_prefixFree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms TarGz.canonical_prefixFree
